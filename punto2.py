@@ -36,7 +36,7 @@ df = df[df["TRIMESTRE"] == 2]
 # Equivalencia de nombres
 aglos = {
     20: "Río Gallegos",
-    18: "Gran San Juan"
+    27: "Gran San Juan"
 }
 
 df = df[df["AGLOMERADO"].isin(aglos.keys())].copy()
