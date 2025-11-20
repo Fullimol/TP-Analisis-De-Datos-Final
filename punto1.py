@@ -1,48 +1,23 @@
-# import pandas as pd
-
-# df = pd.read_csv(
-#     r"D:\ALMACENAMIENTO\UTN Tecnicatura\2do AÑO\2do Cuatrimestre\Introducción al Análisis de Datos\TP final\datos\usu_individual_T216.txt",
-#     sep=";",
-#     encoding="latin1",
-#     low_memory=False
-# )
-
-# print("Shape del DataFrame:", df.shape)
-# print("Primeras filas:")
-# print(df.head())
-
-# print("Primeras columnas:")
-# print(df.columns.tolist()[:30])  # para ver nombres de columnas
-
 import pandas as pd
 from pathlib import Path
 import numpy as np
-
-
-
-
-
-
-
-
-
-
-
-
 
 # === 1) Carpeta donde están TODOS los .txt ===
 CARPETA_DATOS = Path(
     r"D:\ALMACENAMIENTO\UTN Tecnicatura\2do AÑO\2do Cuatrimestre\Introducción al Análisis de Datos\TP final\datos"
 )
 
-# Busco todos los archivos que tengan 'usu_individual_T2'
-archivos = sorted(CARPETA_DATOS.glob("usu_individual_T2*.txt"))
+# Ahora busco TODOS los .txt de la carpeta
+archivos = sorted(CARPETA_DATOS.glob("*.txt"))
 
 print("Archivos encontrados:")
 for a in archivos:
     print(" -", a.name)
 
 dfs = []
+
+# columnas mínimas que necesito para el análisis
+columnas_necesarias = {"ANO4", "TRIMESTRE", "AGLOMERADO", "P47T"}
 
 for archivo in archivos:
     print(f"\nLeyendo {archivo.name}...")
@@ -53,22 +28,25 @@ for archivo in archivos:
         low_memory=False
     )
 
-    # Ya viene ANO4 y TRIMESTRE adentro, así que no hace falta inventarlos
+    # chequeo columnas necesarias
+    if not columnas_necesarias.issubset(df.columns):
+        print(f"  -> Se omite {archivo.name} (no tiene columnas necesarias).")
+        continue
+
+    # convertir P47T a número (fundamental)
+    df["P47T"] = pd.to_numeric(df["P47T"], errors="coerce")
+
+    df["archivo_origen"] = archivo.name
     dfs.append(df)
+
+
+if not dfs:
+    raise ValueError("No se cargó ningún archivo válido. Revisá que los .txt tengan las columnas esperadas.")
 
 # Uno todo en un solo DataFrame
 eph = pd.concat(dfs, ignore_index=True)
 print("\nForma total EPH:", eph.shape)
 print("Columnas (primeras 30):", eph.columns.tolist()[:30])
-
-
-
-
-
-
-
-
-
 
 # === 2) Filtro por aglomerado ===
 
@@ -78,20 +56,11 @@ eph = eph[eph["AGLOMERADO"].isin(AGLOS.keys())].copy()
 eph["aglomerado_nombre"] = eph["AGLOMERADO"].map(AGLOS)
 
 # Población de 14 años o más (criterio clásico laboral)
-eph = eph[eph["CH06"] >= 14].copy()
+# eph = eph[eph["CH06"] >= 14].copy()
 
-print("\nLuego de filtrar aglomerados y edad >=14:")
+print("\nLuego de filtrar aglomerados")
 print("Forma:", eph.shape)
 print(eph[["ANO4", "TRIMESTRE", "AGLOMERADO", "aglomerado_nombre"]].head())
-
-
-
-
-
-
-
-
-
 
 # === 3) Variables de ingresos ===
 
@@ -114,14 +83,6 @@ eph["ponderador"] = eph[ponder_col]
 eph_valid = eph[(eph["ingreso"].notna()) & (eph["ingreso"] > 0)].copy()
 print("\nCon ingreso válido > 0:", eph_valid.shape)
 
-
-
-
-
-
-
-
-
 # === 4) Funciones de estadística ponderada ===
 
 def weighted_mean(x, w):
@@ -135,12 +96,6 @@ def weighted_quantile(values, weights, quantile):
     cumsum = np.cumsum(w)
     cutoff = quantile * cumsum[-1]
     return v[cumsum >= cutoff][0]
-
-
-
-
-
-
 
 # === 5) Cálculo de medidas de tendencia central y posición ===
 
@@ -176,12 +131,6 @@ print(tabla_univariada.head(20))
 # Si querés, exportamos a CSV para meter en Excel/Word:
 tabla_univariada.to_csv("punto1_ingresos_univariado.csv", index=False)
 print("\nSe guardó 'punto1_ingresos_univariado.csv'")
-
-
-
-
-
-
 
 # === 6) IPC por año (base 100 en 2016) ===
 ipc = {
@@ -219,16 +168,9 @@ print(tabla_univariada.head(20))
 tabla_univariada.to_csv("punto1_ingresos_univariado_reales.csv", index=False)
 print("\nSe guardó 'punto1_ingresos_univariado_reales.csv'")
 
-
-
-
-
-
-
-# grafico
+# gráficos
 
 import matplotlib.pyplot as plt
-
 
 # === Gráfico SOLO de ingresos reales ===
 plt.figure(figsize=(12,6))
@@ -247,13 +189,9 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
-
-
 # === Gráfico de percentiles reales (P10, P50, P90) ===
 
 plt.figure(figsize=(12,6))
-
-percentiles = ["p10_real", "mediana_real", "p90_real"]
 
 for aglo in tabla_univariada["aglomerado"].unique():
     sub = tabla_univariada[tabla_univariada["aglomerado"] == aglo]

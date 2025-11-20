@@ -5,51 +5,69 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import os
+from pathlib import Path
 
 # -----------------------------------------
-# 1. CARGA DE LOS DATOS (MISMO PROCEDIMIENTO DEL PUNTO 1)
+# 1. CARGA DE LOS DATOS (LEER TODOS LOS TXT)
 # -----------------------------------------
 
-carpeta = r"D:\ALMACENAMIENTO\UTN Tecnicatura\2do AÑO\2do Cuatrimestre\Introducción al Análisis de Datos\TP final\datos"
-archivos = [a for a in os.listdir(carpeta) if a.lower().startswith("usu_individual")]
+carpeta = Path(
+    r"D:\ALMACENAMIENTO\UTN Tecnicatura\2do AÑO\2do Cuatrimestre\Introducción al Análisis de Datos\TP final\datos"
+)
+
+# cargo TODOS los .txt de la carpeta
+archivos = sorted(list(carpeta.glob("*.txt")))
 
 df_list = []
 
+# columnas mínimas necesarias para el análisis
+columnas_necesarias = {"ANO4", "TRIMESTRE", "AGLOMERADO", "P47T", "CH06"}
+
 for arch in archivos:
-    print("Leyendo:", arch)
+    print("Leyendo:", arch.name)
     temp = pd.read_csv(
-        os.path.join(carpeta, arch),
-        sep=";", encoding="latin1", low_memory=False
+        arch,
+        sep=";",
+        encoding="latin1",
+        low_memory=False
     )
+
+    # evitar cargar archivos 'hogar' u otros formatos
+    if not columnas_necesarias.issubset(temp.columns):
+        print(f"  -> Se omite {arch.name} (no tiene columnas necesarias)")
+        continue
+
+    # asegurar que P47T sea numérico
+    temp["P47T"] = pd.to_numeric(temp["P47T"], errors="coerce")
+
     df_list.append(temp)
 
+# concatenar todos los trimestres de todos los años
 df = pd.concat(df_list, ignore_index=True)
 
-# -----------------------------------------
-# 2. FILTROS: TRIMESTRE 2 + AGLOMERADOS + EDAD >=14
-# -----------------------------------------
+print("\nDataFrame cargado. Forma:", df.shape)
+print(df.head())
 
-# Mantener solo 2º trimestre (coherente con el punto 1)
-df = df[df["TRIMESTRE"] == 2]
+# -----------------------------------------
+# 2. FILTROS: AGLOMERADOS + EDAD >=14 + INGRESO > 0
+# -----------------------------------------
+# (NO filtramos TRIMESTRE: usamos todos los trimestres)
 
-# Equivalencia de nombres
-aglos = {
-    20: "Río Gallegos",
-    27: "Gran San Juan"
-}
+aglos = {20: "Río Gallegos", 27: "Gran San Juan"}
 
 df = df[df["AGLOMERADO"].isin(aglos.keys())].copy()
 df["aglomerado_nombre"] = df["AGLOMERADO"].map(aglos)
 
-# edad >= 14
+# población de 14 años o más
 df = df[df["CH06"] >= 14]
 
-# ingreso nominal válido
+# ingreso válido > 0
 df = df[df["P47T"] > 0]
 
+print("\nLuego de filtros básicos. Forma:", df.shape)
+
 # -----------------------------------------
-# 3. IPC (MISMO IPC DEL PUNTO 1) Y CÁLCULO DE INGRESO REAL
+# 3. IPC Y INGRESO REAL
 # -----------------------------------------
 
 ipc = {
@@ -69,93 +87,76 @@ df["ipc"] = df["ANO4"].map(ipc)
 df["ingreso_real"] = df["P47T"] * (100 / df["ipc"])
 
 # -----------------------------------------
-# 4. CREAR VARIABLES MULTIVARIADAS
+# 4. VARIABLES MULTIVARIADAS
 # -----------------------------------------
 
-# SEXO (CH04)
+# sexo
 df["sexo"] = df["CH04"].map({1: "Varón", 2: "Mujer"})
 
-# NIVEL EDUCATIVO (NIVEL_ED)
+# nivel educativo
 niveles = {
     1: "Primaria incompleta",
     2: "Primaria completa",
     3: "Secundaria incompleta",
     4: "Secundaria completa",
-    5: "Superior/Univ incompleto",
-    6: "Superior/Univ completo"
+    5: "Sup/Univ incompleto",
+    6: "Sup/Univ completo"
 }
 df["nivel_educ"] = df["NIVEL_ED"].map(niveles)
 df = df[~df["nivel_educ"].isna()]
 
-# GRUPOS DE EDAD
+# grupos de edad
 df["grupo_edad"] = pd.cut(
     df["CH06"],
     bins=[14, 24, 44, 64, 100],
     labels=["14–24", "25–44", "45–64", "65+"]
 )
 
-# CATEGORÍA OCUPACIONAL (PP04D_COD)
+# categoría ocupacional (PP04B_COD = posición en la ocupación)
 cat_map = {
     1: "Patrón/empleador",
     2: "Cuenta propia",
     3: "Obrero/empleado",
     4: "Trabajador familiar"
 }
-df["cat_ocup_label"] = df["PP04D_COD"].map(cat_map)
-
+df["cat_ocup_label"] = df["PP04B_COD"].map(cat_map)
 
 # -----------------------------------------
-# 5. TABLAS MULTIVARIADAS PRINCIPALES
+# 5. TABLAS MULTIVARIADAS
 # -----------------------------------------
 
-# --- 5.1 Ingreso real por sexo ---
 tabla_sexo = df.groupby(
-    ["ANO4", "aglomerado_nombre", "sexo"]
-)["ingreso_real"].mean().reset_index()
+    ["ANO4", "aglomerado_nombre", "sexo"], as_index=False
+)["ingreso_real"].mean()
 
-# --- 5.2 Ingreso real por nivel educativo ---
 tabla_educ = df.groupby(
-    ["ANO4", "aglomerado_nombre", "nivel_educ"]
-)["ingreso_real"].mean().reset_index()
+    ["ANO4", "aglomerado_nombre", "nivel_educ"], as_index=False
+)["ingreso_real"].mean()
 
-# --- 5.3 Ingreso real por grupo de edad ---
 tabla_edad = df.groupby(
-    ["ANO4", "aglomerado_nombre", "grupo_edad"]
-)["ingreso_real"].mean().reset_index()
+    ["ANO4", "aglomerado_nombre", "grupo_edad"], as_index=False
+)["ingreso_real"].mean()
 
-# --- 5.4 Ingreso real por categoría ocupacional ---
 tabla_cat = df.groupby(
-    ["ANO4", "aglomerado_nombre", "cat_ocup_label"]
-)["ingreso_real"].mean().reset_index()
+    ["ANO4", "aglomerado_nombre", "cat_ocup_label"], as_index=False
+)["ingreso_real"].mean()
 
 # -----------------------------------------
-# 6. EXPORTAR TABLAS A CSV
+# 7. GRÁFICOS MULTIVARIADOS
 # -----------------------------------------
 
-# salida = r"D:\ALMACENAMIENTO\UTN Tecnicatura\2do AÑO\2do Cuatrimestre\Introducción al Análisis de Datos\TP final\csv_punto2"
-# os.makedirs(salida, exist_ok=True)
-
-# tabla_sexo.to_csv(os.path.join(salida, "punto2_ingreso_real_por_sexo.csv"), index=False)
-# tabla_educ.to_csv(os.path.join(salida, "punto2_ingreso_real_por_nivel_educ.csv"), index=False)
-# tabla_edad.to_csv(os.path.join(salida, "punto2_ingreso_real_por_edad.csv"), index=False)
-# tabla_cat.to_csv(os.path.join(salida, "punto2_ingreso_real_por_categoria_ocupacional.csv"), index=False)
-
-# -----------------------------------------
-# 7. GRAFICOS MULTIVARIADOS
-# -----------------------------------------
-
-# grafico sexo por aglomerado
-plt.figure(figsize=(12,6))
-
+# 7.1 Sexo
+plt.figure(figsize=(12, 6))
 for sexo in tabla_sexo["sexo"].unique():
     for aglo in tabla_sexo["aglomerado_nombre"].unique():
         sub = tabla_sexo[
             (tabla_sexo["sexo"] == sexo) &
             (tabla_sexo["aglomerado_nombre"] == aglo)
         ]
-        plt.plot(sub["ANO4"], sub["ingreso_real"], marker="o", label=f"{sexo} – {aglo}")
+        if len(sub) > 0:
+            plt.plot(sub["ANO4"], sub["ingreso_real"], marker="o", label=f"{sexo} – {aglo}")
 
-plt.title("Ingreso real promedio por sexo y aglomerado (2º trimestre)")
+plt.title("Ingreso real promedio por sexo y aglomerado (todos los trimestres)")
 plt.xlabel("Año")
 plt.ylabel("Ingreso real")
 plt.grid(True)
@@ -163,19 +164,18 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-
-# grafico nivel educativo por aglomerado
-plt.figure(figsize=(12,6))
-
+# 7.2 Nivel educativo
+plt.figure(figsize=(12, 6))
 for nivel in tabla_educ["nivel_educ"].unique():
     for aglo in tabla_educ["aglomerado_nombre"].unique():
         sub = tabla_educ[
             (tabla_educ["nivel_educ"] == nivel) &
             (tabla_educ["aglomerado_nombre"] == aglo)
         ]
-        plt.plot(sub["ANO4"], sub["ingreso_real"], marker="o", label=f"{nivel} – {aglo}")
+        if len(sub) > 0:
+            plt.plot(sub["ANO4"], sub["ingreso_real"], marker="o", label=f"{nivel} – {aglo}")
 
-plt.title("Ingreso real por nivel educativo y aglomerado (2º trimestre)")
+plt.title("Ingreso real por nivel educativo y aglomerado (todos los trimestres)")
 plt.xlabel("Año")
 plt.ylabel("Ingreso real")
 plt.grid(True)
@@ -183,19 +183,18 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-
-# grafico edad por aglomerado
-plt.figure(figsize=(12,6))
-
+# 7.3 Grupo de edad
+plt.figure(figsize=(12, 6))
 for edad in tabla_edad["grupo_edad"].unique():
     for aglo in tabla_edad["aglomerado_nombre"].unique():
         sub = tabla_edad[
             (tabla_edad["grupo_edad"] == edad) &
             (tabla_edad["aglomerado_nombre"] == aglo)
         ]
-        plt.plot(sub["ANO4"], sub["ingreso_real"], marker="o", label=f"{edad} – {aglo}")
+        if len(sub) > 0:
+            plt.plot(sub["ANO4"], sub["ingreso_real"], marker="o", label=f"{edad} – {aglo}")
 
-plt.title("Ingreso real por grupos de edad y aglomerado (2º trimestre)")
+plt.title("Ingreso real por grupos de edad y aglomerado (todos los trimestres)")
 plt.xlabel("Año")
 plt.ylabel("Ingreso real")
 plt.grid(True)
@@ -203,9 +202,8 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-# grafico categoria ocupacional por aglomerado (aunque solo existe una categoria por los filtros)
-plt.figure(figsize=(12,6))
-
+# 7.4 Categoría ocupacional (posición en la ocupación)
+plt.figure(figsize=(12, 6))
 for cat in tabla_cat["cat_ocup_label"].dropna().unique():
     for aglo in tabla_cat["aglomerado_nombre"].unique():
         sub = tabla_cat[
@@ -215,7 +213,7 @@ for cat in tabla_cat["cat_ocup_label"].dropna().unique():
         if len(sub) > 0:
             plt.plot(sub["ANO4"], sub["ingreso_real"], marker="o", label=f"{cat} – {aglo}")
 
-plt.title("Ingreso real por categoría ocupacional y aglomerado (2º trimestre)")
+plt.title("Ingreso real por categoría ocupacional (PP04B_COD) y aglomerado (todos los trimestres)")
 plt.xlabel("Año")
 plt.ylabel("Ingreso real")
 plt.grid(True)
@@ -223,8 +221,4 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-
-
-
 print("Punto 2 finalizado correctamente.")
-
